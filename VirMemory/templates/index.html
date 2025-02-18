@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Simulator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-around;
+            align-items: stretch;
+            width: 100%;
+            max-width: max-content;
+            margin: 5px auto;
+            padding-left: 20px;
+            padding-right: 20px;
+            gap: 40px;
+        }
+
+        .box {
+            width: 25%;
+            min-width: 210px;
+            padding-left: 20px;
+            padding-right: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            background-color: #f9f9f9;
+        }
+        .table-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-around;
+            align-items: flex-start;
+            gap: 90px;
+            margin-top: 20px;
+        }
+
+        .scrollable-container {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            margin: 10px;
+            padding: 10px;
+        }
+
+
+        .table-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: auto;
+            text-align: center;
+            margin: auto;
+        }
+
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+        }
+
+    </style>
+</head>
+<body>
+   <div class="container">
+    <div id="system-parameters" class="box">
+        <h3>System Parameters</h3>
+        <label>Virtual Address Width:</label>
+        <input id="va_width" type="number"><br>
+        <label>Page Size:</label>
+        <span>4 KB</span><br>
+        <label>TLB Size:</label>
+        <span>16 entries</span><br>
+        <label>TLB Associativity:</label>
+        <input id="tlb_associativity" type="number" style="width:30px"> -way set<br>
+        <label>Physical Memory:</label>
+        <span>64 KB</span><br>
+        <label for="policy-select">Page Replacement Policy:</label>
+            <select id="policy-select">
+                <option value="FIFO">FIFO</option>
+                <option value="LRU">LRU</option>
+            </select>
+        <br><button id="generate_system">Generate System</button>
+        <button id="reset">Reset System</button>
+    </div>
+
+    <div id="memory-sequence-setup" class="box">
+            <h3>Input Address Sequence</h3>
+            <button id="use_default">Use Default Sequence</button>
+            <button id="random_address">Generate Random Address</button>
+            <br><br>
+            <input id="memory_address" type="text">
+            <button id="add_address">Add Address</button>
+            <br><br>
+            <button id="next_step">Next Step</button>
+            <button id="next_address">Next Address</button>
+    </div>
+    <div class="box">
+        <h3>Memory Addresses</h3>
+        <textarea id="memory-sequence" style="width: 220px; height: 150px;"></textarea>
+    </div>
+    <div class="box">
+        <h3>Explanation Messages</h3>
+        <textarea id="explanation-messages" style="width: 220px; height: 150px;" ></textarea>
+    </div>
+    <div class="box">
+        <h3>Memory Access Statistics</h3>
+            <label for="tlb-hits">TLB Hits:</label>
+        <input type="text" id="tlb-hits" value="0" readonly style="width: 80px" /><br>
+
+        <label for="tlb-misses">TLB Misses:</label>
+        <input type="text" id="tlb-misses" value="0" readonly style="width: 80px"/><br>
+
+        <label for="tlb-hit-rate">TLB Hit Rate:</label>
+        <input type="text" id="tlb-hit-rate" value="0%" readonly style="width: 45px"/><br>
+
+        <label for="page-table-hits">Page Table Hits:</label>
+        <input type="text" id="page-table-hits" value="0" readonly style="width: 80px"/><br>
+
+        <label for="page-table-misses">Page Table Misses:</label>
+        <input type="text" id="page-table-misses" value="0" readonly style="width: 80px"/><br>
+
+        <label for="page-table-hit-rate">Page Table Hit Rate:</label>
+        <input type="text" id="page-table-hit-rate" value="0%" readonly style="width: 45px"/>
+    </div>
+   </div>
+
+<div class="table-container" style="display: none;">
+    <div class="scrollable-container">
+        <div class="table-box">
+            <span class="label">VAS</span>
+            <table id="vas-table"></table>
+        </div>
+    </div>
+    <div class="scrollable-container">
+        <div class="table-box">
+            <span class="label">TLB</span>
+            <table id="tlb-table"></table>
+        </div>
+    </div>
+    <div class="scrollable-container">
+        <div class="table-box">
+            <span class="label">Page Table</span>
+            <table id="pt-table"></table>
+        </div>
+    </div>
+    <div class="scrollable-container">
+        <div class="table-box">
+            <span class="label">RAM</span>
+            <table id="ram-table"></table>
+        </div>
+    </div>
+</div>
+
+
+
+    <script>
+        document.getElementById("generate_system").addEventListener("click", function() {
+        const virtualAddressWidth = parseInt(document.getElementById("va_width").value);
+        const tlbAssociativity = parseInt(document.getElementById("tlb_associativity").value);
+        const pageReplacementPolicy = document.getElementById("policy-select").value;
+
+        fetch("/generate_system", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                virtual_address_width: virtualAddressWidth,
+                tlb_associativity: tlbAssociativity,
+                page_replacement_policy: pageReplacementPolicy
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                const tables = data.tables;
+                const tableContainer = document.querySelector(".table-container");
+                tableContainer.style.display = "flex";
+
+
+                const vasTable = document.getElementById("vas-table");
+                vasTable.innerHTML = "";
+                tables.vas.forEach((entry, index) => {
+                    const row = vasTable.insertRow();
+                    const cell = row.insertCell();
+                    cell.innerText = entry.virtual_address;
+                    row.dataset.index = index;
+                });
+
+                const ptTable = document.getElementById("pt-table");
+                ptTable.innerHTML = "<tr><th>Index</th><th>Valid</th><th>PPN</th></tr>";
+                tables.page_table.forEach((entry, index) => {
+                    const row = ptTable.insertRow();
+                    row.innerHTML = `
+                        <td>${entry.index}</td>
+                        <td>${entry.valid?1:0}</td>
+                        <td>${entry.ppn}</td>
+                    `;
+                    row.dataset.index = index;
+                });
+
+                const ramTable = document.getElementById("ram-table");
+                ramTable.innerHTML = "";
+                tables.ram.forEach((entry, index) => {
+                    const row = ramTable.insertRow();
+                    const cell = row.insertCell();
+                    cell.innerText = entry.physical_address;
+                    row.dataset.index = index;
+                });
+
+                const tlbTable = document.getElementById("tlb-table");
+                tlbTable.innerHTML = "<tr><th>Set</th><th>Valid</th><th>Tag</th><th>PPN</th></tr>";
+                tables.tlb.forEach((entry, index) => {
+                    const row = tlbTable.insertRow();
+                    row.innerHTML = `
+                        <td>${entry.set}</td>
+                        <td>${entry.valid?1:0}</td>
+                        <td>${entry.tag}</td>
+                        <td>${entry.ppn}</td>
+                    `;
+                    row.dataset.index = index;
+                });
+
+                document.getElementById("tables-container").style.display = "block";
+            }
+        })
+        .catch(error => console.error("Error:", error));
+    });
+
+        document.getElementById("reset").addEventListener("click", function () {
+        fetch("/reset_system", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.message) {
+                    const tableContainer = document.querySelector(".table-container");
+                    tableContainer.style.display = "none";
+
+                    document.getElementById("va_width").value = "";
+                    document.getElementById("tlb_associativity").value = "";
+                    document.getElementById("memory_address").value = "";
+
+                    document.getElementById("memory-sequence").value = "";
+                    document.getElementById("explanation-messages").value = "";
+
+                    document.getElementById("tlb-hits").value = "0";
+                    document.getElementById("tlb-misses").value = "0";
+                    document.getElementById("tlb-hit-rate").value = "0%";
+                    document.getElementById("page-table-hits").value = "0";
+                    document.getElementById("page-table-misses").value = "0";
+                    document.getElementById("page-table-hit-rate").value = "0%";
+
+                }
+            })
+            .catch((error) => console.error("Error:", error));
+    });
+
+        document.getElementById("use_default").addEventListener("click", function () {
+        fetch("/upload_address_sequence", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.sequence) {
+                    const memorySequenceTextarea = document.getElementById("memory-sequence");
+                    memorySequenceTextarea.value = data.sequence.join("\n");
+                } else if (data.error) {
+                    alert(data.error);
+                }
+            })
+            .catch((error) => console.error("Error:", error));
+    });
+
+        document.getElementById("add_address").addEventListener("click", function () {
+        const addressInput = document.getElementById("memory_address").value;
+
+        fetch("/add_address", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: addressInput })
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.sequence) {
+                    const memorySequenceTextarea = document.getElementById("memory-sequence");
+                    memorySequenceTextarea.value = data.sequence.join("\n");
+                    document.getElementById("memory_address").value = "";
+                } else if (data.error) {
+                    alert(data.error);
+                }
+            })
+            .catch((error) => console.error("Error:", error));
+    });
+        document.getElementById("random_address").addEventListener("click", function () {
+        fetch("/generate_random_address", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.sequence) {
+                    const memorySequenceTextarea = document.getElementById("memory-sequence");
+                    memorySequenceTextarea.value = data.sequence.join("\n");
+                } else if (data.error) {
+                    alert(data.error);
+                }
+            })
+            .catch((error) => console.error("Error:", error));
+    });
+
+        document.getElementById("next_step").addEventListener("click", function () {
+        fetch("/next_step", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to process the next step.");
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                updateMessages(data.messages);
+
+                updateAddressSequence(data.sequence);
+
+                updateStats(data.stats);
+
+                updatePTAndTLB(data.page_table, data.tlb_table);
+
+                updateTableColors(data.colors);
+
+
+            })
+            .catch((error) => {
+                console.error("Error:", error);
+            });
+    });
+
+        document.getElementById("next_address").addEventListener("click", function () {
+        fetch("/next_address", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to process the next step.");
+                }
+                return response.json();
+            })
+            .then((data) => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+
+                updateMessages(data.messages);
+
+                updateAddressSequence(data.sequence);
+
+                updateStats(data.stats);
+
+                updatePTAndTLB(data.page_table, data.tlb_table);
+
+                updateTableColors(data.colors);
+
+            })
+            .catch((error) => {
+                console.error("Error:", error);
+            });
+    });
+
+    function updateMessages(messages) {
+        const messagesArea = document.getElementById("explanation-messages");
+        messagesArea.value = messages;
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    function updateAddressSequence(sequence) {
+        const sequenceArea = document.getElementById("memory-sequence");
+        sequenceArea.value = sequence.join("\n");
+    }
+
+    function updateStats(stats) {
+        document.getElementById("tlb-hits").value = stats.tlb_hits;
+        document.getElementById("tlb-misses").value = stats.tlb_misses;
+        document.getElementById("tlb-hit-rate").value = stats.tlb_hit_rate.toFixed(2) + "%";
+        document.getElementById("page-table-hits").value = stats.pt_hits;
+        document.getElementById("page-table-misses").value = stats.pt_misses;
+        document.getElementById("page-table-hit-rate").value = stats.pt_hit_rate.toFixed(2) + "%";
+    }
+
+    function updateTableColors(colors) {
+        Object.keys(colors).forEach((tableId) => {
+            const tableColors = colors[tableId];
+            const table = document.getElementById(`${tableId}-table`);
+
+            if (tableColors && table) {
+                 Object.entries(tableColors).forEach(([index, color]) => {
+                    const rowIndex = parseInt(index, 10);
+                    const row = Array.from(table.rows).find(
+                    (row) => row.dataset.index === rowIndex.toString()
+                    );
+
+                    if (row) {
+                        row.style.backgroundColor = color;
+
+                        if (color.toLowerCase() !== "dodgerblue" && color.toLowerCase() !=="#1e90ff" && color.toLowerCase() !=="#ffffff"  && color.toLowerCase() !=="white")
+                        row.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                        });
+                    }
+                    else console.error(`Row with dataset index ${rowIndex} not found in table ${tableId}-table.`);
+
+                });
+            }
+        });
+    }
+        function updatePTAndTLB(pageTableData, tlbData) {
+        const ptTable = document.getElementById("pt-table");
+        ptTable.innerHTML = "<tr><th>Index</th><th>Valid</th><th>PPN</th></tr>";
+        pageTableData.forEach((entry, index) => {
+            const row = ptTable.insertRow();
+            row.innerHTML = `
+                <td>${entry.index}</td>
+                <td>${entry.valid ? 1 : 0}</td>
+                <td>${entry.ppn}</td>
+            `;
+            row.dataset.index = index;
+        });
+
+        const tlbTable = document.getElementById("tlb-table");
+        tlbTable.innerHTML = "<tr><th>Set</th><th>Valid</th><th>Tag</th><th>PPN</th></tr>";
+        tlbData.forEach((entry, index) => {
+            const row = tlbTable.insertRow();
+            row.innerHTML = `
+                <td>${entry.set}</td>
+                <td>${entry.valid ? 1 : 0}</td>
+                <td>${entry.tag}</td>
+                <td>${entry.ppn}</td>
+            `;
+            row.dataset.index = index;
+        });
+        }
+
+
+
+
+    </script>
+</body>
+</html>
